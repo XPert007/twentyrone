@@ -1,11 +1,12 @@
 use std::env;
 mod commands;
 use serde::{Deserialize, Serialize};
+use serenity::all::Ready;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct Server {
     id: GuildId,
     prefix: char,
@@ -34,31 +35,53 @@ async fn append_server(new_server: Server) {
         save_servers(&servers).await;
     }
 }
+async fn setprefix(serverid: GuildId, newprefix: char) {
+    let mut servers: Vec<Server> = load_servers().await;
+    match servers.iter_mut().find(|s| s.id == serverid) {
+        Some(s) => s.prefix = newprefix,
+        None => println!("This should not have happened"),
+    }
+    save_servers(&servers).await;
+}
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        let mut prefix = '!';
+        let servers = load_servers().await;
+        let prefix = msg
+            .guild_id
+            .and_then(|gid| servers.iter().find(|s| s.id == gid))
+            .map(|s| s.prefix.clone())
+            .unwrap_or('!');
         if msg.content.starts_with(prefix) {
             let mut args = msg.content.split_whitespace();
             let first = args.next().unwrap();
             let cmd = &first[1..];
             match cmd {
                 "ping" => commands::ping::run(&ctx, &msg).await,
-                "setprefix" => todo!(),
+                "setprefix" => {
+                    let new = args.next().unwrap();
+                    let new_prefix = new.chars().next().unwrap();
+                    if let Some(guild_id) = msg.guild_id {
+                        setprefix(guild_id, new_prefix).await;
+                    } else {
+                        todo!() //prefix for dms
+                    }
+                }
                 _ => todo!(),
             }
         }
     }
     async fn cache_ready(&self, _: Context, guilds: Vec<GuildId>) {
         for guild in guilds {
-            dbg!();
             let temp = Server {
                 id: guild,
                 prefix: '!',
             };
-            dbg!();
             append_server(temp).await;
         }
+    }
+    async fn ready(&self, _: Context, _: Ready) {
+        println!("Bot started");
     }
 }
 
