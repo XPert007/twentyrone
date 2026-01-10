@@ -6,20 +6,11 @@ use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct Server {
-    id: GuildId,
-    prefix: char,
-}
+mod utils;
+use crate::utils::save_servers::Server;
+use crate::utils::save_servers::save_servers;
 struct Handler;
-async fn save_servers(servers: &Vec<Server>) {
-    let json = serde_json::to_string_pretty(servers).unwrap();
 
-    tokio::fs::write("servers.tmp", json).await.unwrap();
-    tokio::fs::rename("servers.tmp", "servers.json")
-        .await
-        .unwrap();
-}
 async fn load_servers() -> Vec<Server> {
     let data = tokio::fs::read_to_string("servers.json")
         .await
