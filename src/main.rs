@@ -1,39 +1,16 @@
 use std::env;
 mod commands;
-use serde::{Deserialize, Serialize};
 use serenity::all::Ready;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
 mod utils;
-use crate::utils::save_servers::Server;
-use crate::utils::save_servers::save_servers;
+use crate::utils::servers::Server;
+use crate::utils::servers::append_server;
+use crate::utils::servers::load_servers;
 struct Handler;
 
-async fn load_servers() -> Vec<Server> {
-    let data = tokio::fs::read_to_string("servers.json")
-        .await
-        .unwrap_or_else(|_| "[]".to_string());
-
-    serde_json::from_str(&data).unwrap_or_default()
-}
-async fn append_server(new_server: Server) {
-    let mut servers: Vec<Server> = load_servers().await;
-
-    if !servers.iter().any(|s| s.id == new_server.id) {
-        servers.push(new_server);
-        save_servers(&servers).await;
-    }
-}
-async fn setprefix(serverid: GuildId, newprefix: char) {
-    let mut servers: Vec<Server> = load_servers().await;
-    match servers.iter_mut().find(|s| s.id == serverid) {
-        Some(s) => s.prefix = newprefix,
-        None => println!("This should not have happened"),
-    }
-    save_servers(&servers).await;
-}
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
@@ -49,15 +26,7 @@ impl EventHandler for Handler {
             let cmd = &first[1..];
             match cmd {
                 "ping" => commands::ping::run(&ctx, &msg).await,
-                "setprefix" => {
-                    let new = args.next().unwrap();
-                    let new_prefix = new.chars().next().unwrap();
-                    if let Some(guild_id) = msg.guild_id {
-                        setprefix(guild_id, new_prefix).await;
-                    } else {
-                        todo!() //prefix for dms
-                    }
-                }
+                "setprefix" => commands::setprefix::run(args, msg.clone()).await,
                 _ => todo!(),
             }
         }

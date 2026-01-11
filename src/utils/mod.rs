@@ -1,1 +1,1 @@
-pub mod save_servers;
+pub mod servers;
