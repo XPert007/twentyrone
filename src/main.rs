@@ -9,7 +9,21 @@ mod utils;
 use crate::utils::servers::Server;
 use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
+use serenity::model::guild::Guild;
 struct Handler;
+
+enum Suits {
+    Hearts,
+    Diamonds,
+    Spades,
+    Clubs,
+}
+
+struct Card {
+    name: String,
+    value: i8,
+    suit: Suits,
+}
 
 #[async_trait]
 impl EventHandler for Handler {
@@ -27,8 +41,20 @@ impl EventHandler for Handler {
             match cmd {
                 "ping" => commands::ping::run(&ctx, &msg).await,
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
-                _ => todo!(),
+                "blackjack" => todo!(),
+                _ => (),
             }
+        }
+    }
+    async fn guild_create(&self, _: Context, guild: Guild, is_new: Option<bool>) {
+        if is_new.unwrap() == true {
+            let temp = Server {
+                id: guild.id,
+                prefix: '!',
+            };
+            append_server(temp).await;
+        } else {
+            ()
         }
     }
     async fn cache_ready(&self, _: Context, guilds: Vec<GuildId>) {
