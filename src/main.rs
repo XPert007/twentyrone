@@ -1,4 +1,5 @@
 use std::env;
+use std::vec;
 mod commands;
 use serenity::all::Ready;
 use serenity::async_trait;
@@ -11,7 +12,7 @@ use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
 use serenity::model::guild::Guild;
 struct Handler;
-
+#[derive(Clone, Copy)]
 enum Suits {
     Hearts,
     Diamonds,
@@ -20,9 +21,36 @@ enum Suits {
 }
 
 struct Card {
-    name: String,
+    name: &'static str,
     value: i8,
     suit: Suits,
+}
+
+fn value(n: &str) -> i8 {
+    match n {
+        "King" | "Queen" | "Jack" => 10,
+        "Ace" => 1,
+        _ => 0,
+    }
+}
+
+fn gen_cards() -> Vec<Card> {
+    let names = ["King", "Queen", "Ace", "Jack"];
+    let suits = [Suits::Hearts, Suits::Diamonds, Suits::Spades, Suits::Clubs];
+
+    let mut cards = Vec::new();
+
+    for &suit in &suits {
+        for &name in &names {
+            cards.push(Card {
+                name,
+                value: value(name),
+                suit,
+            });
+        }
+    }
+
+    cards
 }
 
 #[async_trait]
