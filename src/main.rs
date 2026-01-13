@@ -1,6 +1,8 @@
 use std::env;
 use std::vec;
 mod commands;
+use serenity::all::Http;
+use serenity::all::ReactionType;
 use serenity::all::Ready;
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -70,6 +72,11 @@ impl EventHandler for Handler {
                 "ping" => commands::ping::run(&ctx, &msg).await,
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
                 "blackjack" => todo!(),
+                "react" => {
+                    msg.react(ctx.http, ReactionType::Unicode("🔥".to_string()))
+                        .await
+                        .unwrap();
+                }
                 _ => (),
             }
         }
