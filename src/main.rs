@@ -13,6 +13,7 @@ use crate::utils::servers::Server;
 use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
 use serenity::model::guild::Guild;
+use serenity::model::id::ChannelId;
 struct Handler;
 #[derive(Clone, Copy)]
 enum Suits {
@@ -55,6 +56,16 @@ fn gen_cards() -> Vec<Card> {
     cards
 }
 
+async fn send_and_react(ctx: &Context, channel_id: ChannelId) {
+    let msg = channel_id
+        .say(&ctx.http, "hello")
+        .await
+        .expect("Failed to send message");
+
+    msg.react(&ctx.http, ReactionType::Unicode("🔥".to_string()))
+        .await
+        .expect("Failed to react");
+}
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
@@ -77,6 +88,7 @@ impl EventHandler for Handler {
                         .await
                         .unwrap();
                 }
+                "rns" => send_and_react(&ctx, msg.channel_id).await,
                 _ => (),
             }
         }
