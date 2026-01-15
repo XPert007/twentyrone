@@ -66,6 +66,7 @@ async fn send_and_react(ctx: &Context, channel_id: ChannelId) {
         .await
         .expect("Failed to react");
 }
+async fn blackjack(ctx: &Context, channel_id: ChannelId, n: char) {}
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
@@ -82,7 +83,11 @@ impl EventHandler for Handler {
             match cmd {
                 "ping" => commands::ping::run(&ctx, &msg).await,
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
-                "blackjack" => todo!(),
+                "blackjack" => {
+                    if let Some(c) = args.next().and_then(|w| w.chars().next()) {
+                        blackjack(&ctx, msg.channel_id, c).await;
+                    }
+                }
                 "react" => {
                     msg.react(ctx.http, ReactionType::Unicode("🔥".to_string()))
                         .await
