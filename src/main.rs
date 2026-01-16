@@ -2,6 +2,7 @@ use std::env;
 use std::vec;
 mod commands;
 use serenity::all::Http;
+use serenity::all::Reaction;
 use serenity::all::ReactionType;
 use serenity::all::Ready;
 use serenity::async_trait;
@@ -14,6 +15,7 @@ use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
 use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
+use tokio::time::{Duration, sleep};
 struct Handler;
 #[derive(Clone, Copy)]
 enum Suits {
@@ -56,19 +58,39 @@ fn gen_cards() -> Vec<Card> {
     cards
 }
 
-async fn send_and_react(ctx: &Context, channel_id: ChannelId) {
+async fn send_and_react(ctx: &Context, channel_id: ChannelId, content: &str) {
     let msg = channel_id
-        .say(&ctx.http, "hello")
+        .say(&ctx.http, content)
         .await
         .expect("Failed to send message");
 
-    msg.react(&ctx.http, ReactionType::Unicode("🔥".to_string()))
+    msg.react(&ctx.http, ReactionType::Unicode("🃏".to_string()))
         .await
         .expect("Failed to react");
 }
-async fn blackjack(ctx: &Context, channel_id: ChannelId, n: char) {}
+async fn countdown(mut seconds: u64) {
+    while seconds > 0 {
+        println!("{}", seconds);
+        sleep(Duration::from_secs(1)).await;
+        seconds -= 1;
+    }
+    println!("Done!");
+}
+async fn blackjack(ctx: &Context, channel_id: ChannelId, n: i8) {
+    send_and_react(
+        ctx,
+        channel_id,
+        "React to this message to register for the game, the game will start in 60 seconds",
+    )
+    .await;
+    countdown(60).await;
+}
 #[async_trait]
 impl EventHandler for Handler {
+    async fn reaction_add(&self, ctx: Context, reac: Reaction){
+        if reac.message_id == !todo()//add current blackjack games id if it matches then we will
+                                     //add the player to the game
+    }
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
         let prefix = msg
@@ -85,7 +107,18 @@ impl EventHandler for Handler {
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
                 "blackjack" => {
                     if let Some(c) = args.next().and_then(|w| w.chars().next()) {
-                        blackjack(&ctx, msg.channel_id, c).await;
+                        blackjack(&ctx, msg.channel_id, c as i8).await;
+                    } else {
+                        msg.channel_id
+                            .say(
+                                &ctx,
+                                format!(
+                                    "Please use the proper format example \"{}blackjack 5\"",
+                                    prefix
+                                ),
+                            )
+                            .await
+                            .unwrap();
                     }
                 }
                 "react" => {
@@ -93,7 +126,7 @@ impl EventHandler for Handler {
                         .await
                         .unwrap();
                 }
-                "rns" => send_and_react(&ctx, msg.channel_id).await,
+                "rns" => send_and_react(&ctx, msg.channel_id, "test").await,
                 _ => (),
             }
         }
