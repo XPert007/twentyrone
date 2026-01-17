@@ -2,9 +2,11 @@ use std::env;
 use std::vec;
 mod commands;
 use serenity::all::Http;
+use serenity::all::MessageId;
 use serenity::all::Reaction;
 use serenity::all::ReactionType;
 use serenity::all::Ready;
+use serenity::all::UserId;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::id::GuildId;
@@ -17,6 +19,7 @@ use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
 use tokio::time::{Duration, sleep};
 struct Handler;
+
 #[derive(Clone, Copy)]
 enum Suits {
     Hearts,
@@ -25,12 +28,21 @@ enum Suits {
     Clubs,
 }
 
+struct Game {
+    id: MessageId,
+    players: Vec<UserId>,
+}
+
 struct Card {
     name: &'static str,
     value: i8,
     suit: Suits,
 }
-
+impl Game {
+    fn add_player(&mut self, id: UserId) {
+        self.players.push(id);
+    }
+}
 fn value(n: &str) -> i8 {
     match n {
         "King" | "Queen" | "Jack" => 10,
@@ -38,7 +50,6 @@ fn value(n: &str) -> i8 {
         _ => 0,
     }
 }
-
 fn gen_cards() -> Vec<Card> {
     let names = ["King", "Queen", "Ace", "Jack"];
     let suits = [Suits::Hearts, Suits::Diamonds, Suits::Spades, Suits::Clubs];
@@ -58,7 +69,7 @@ fn gen_cards() -> Vec<Card> {
     cards
 }
 
-async fn send_and_react(ctx: &Context, channel_id: ChannelId, content: &str) {
+async fn send_and_react(ctx: &Context, channel_id: ChannelId, content: &str) -> Message {
     let msg = channel_id
         .say(&ctx.http, content)
         .await
@@ -67,6 +78,7 @@ async fn send_and_react(ctx: &Context, channel_id: ChannelId, content: &str) {
     msg.react(&ctx.http, ReactionType::Unicode("🃏".to_string()))
         .await
         .expect("Failed to react");
+    return msg;
 }
 async fn countdown(mut seconds: u64) {
     while seconds > 0 {
@@ -76,21 +88,35 @@ async fn countdown(mut seconds: u64) {
     }
     println!("Done!");
 }
+async fn create_game(game: Game) {
+    let json = serde_json::to_string_pretty(game).unwrap();
+
+    tokio::fs::write("games.tmp", json).await.unwrap();
+    tokio::fs::rename("games.tmp", "servers.json")
+        .await
+        .unwrap();
+}
+
 async fn blackjack(ctx: &Context, channel_id: ChannelId, n: i8) {
-    send_and_react(
+    let msg_id = send_and_react(
         ctx,
         channel_id,
         "React to this message to register for the game, the game will start in 60 seconds",
     )
     .await;
+    let current: Game = Game {
+        id: msg_id.id,
+        players: Vec::new(),
+    };
+    create_game(current);
     countdown(60).await;
 }
 #[async_trait]
 impl EventHandler for Handler {
-    async fn reaction_add(&self, ctx: Context, reac: Reaction){
-        if reac.message_id == !todo()//add current blackjack games id if it matches then we will
-                                     //add the player to the game
+    async fn reaction_add(&self, ctx: Context, reac: Reaction) {
+        reac.message_id;
     }
+    //add the player to the game
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
         let prefix = msg
@@ -126,7 +152,9 @@ impl EventHandler for Handler {
                         .await
                         .unwrap();
                 }
-                "rns" => send_and_react(&ctx, msg.channel_id, "test").await,
+                "rns" => {
+                    let _ = send_and_react(&ctx, msg.channel_id, "test").await;
+                }
                 _ => (),
             }
         }
