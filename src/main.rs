@@ -1,8 +1,6 @@
 use std::env;
-use std::vec;
 mod commands;
 use serde::Deserialize;
-use serenity::all::Http;
 use serenity::all::MessageId;
 use serenity::all::Reaction;
 use serenity::all::ReactionType;
@@ -28,7 +26,7 @@ enum Suits {
     Spades,
     Clubs,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Game {
     id: MessageId,
     players: Vec<UserId>,
@@ -42,6 +40,9 @@ struct Card {
 impl Game {
     fn add_player(&mut self, id: UserId) {
         self.players.push(id);
+    }
+    fn len(&self) -> usize {
+        self.players.len()
     }
 }
 fn value(n: &str) -> i8 {
@@ -105,6 +106,14 @@ async fn load_games() -> Vec<Game> {
     serde_json::from_str(&data).unwrap_or_default()
 }
 
+async fn remove_game(game: &Game) {
+    let mut games: Vec<Game> = load_games().await;
+
+    if let Some(pos) = games.iter().position(|x| x.id == game.id) {
+        games.remove(pos);
+    }
+    save_games(&games).await;
+}
 async fn save_games(games: &[Game]) {
     let json = serde_json::to_string_pretty(games).unwrap();
 
@@ -112,7 +121,7 @@ async fn save_games(games: &[Game]) {
     tokio::fs::rename("games.tmp", "games.json").await.unwrap();
 }
 
-async fn blackjack(ctx: &Context, channel_id: ChannelId, n: i8) {
+async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     let msg_id = send_and_react(
         ctx,
         channel_id,
@@ -123,8 +132,22 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: i8) {
         id: msg_id.id,
         players: Vec::new(),
     };
-    append_game(current).await;
+    append_game(current.clone()).await;
     countdown(60).await;
+    let games = load_games().await;
+    let mut sufficient_players = false;
+    for game in games {
+        if game.id == current.id {
+            if n == game.len() {
+                sufficient_players = true;
+                channel_id.say(&ctx, "Game started").await.unwrap();
+                remove_game(&current).await;
+            }
+        }
+    }
+    if !sufficient_players {
+        channel_id.say(&ctx, "Not enough players").await.unwrap();
+    }
 }
 #[async_trait]
 impl EventHandler for Handler {
@@ -134,7 +157,7 @@ impl EventHandler for Handler {
             println!("{} is game id, {} is message_id", game.id, reac.message_id);
             if game.id == reac.message_id {
                 if !game.players.contains(&reac.user_id.unwrap()) {
-                    game.players.push(reac.user_id.unwrap());
+                    game.add_player(reac.user_id.unwrap());
                     save_games(&games).await;
                     println!("games saved with your name");
                 }
@@ -143,7 +166,6 @@ impl EventHandler for Handler {
         }
     }
 
-    //add the player to the game
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
         let prefix = msg
@@ -160,7 +182,7 @@ impl EventHandler for Handler {
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
                 "blackjack" => {
                     if let Some(c) = args.next().and_then(|w| w.chars().next()) {
-                        blackjack(&ctx, msg.channel_id, c as i8).await;
+                        blackjack(&ctx, msg.channel_id, c as usize).await;
                     } else {
                         msg.channel_id
                             .say(
