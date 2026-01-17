@@ -131,10 +131,12 @@ impl EventHandler for Handler {
     async fn reaction_add(&self, _: Context, reac: Reaction) {
         let mut games = load_games().await;
         for game in games.iter_mut() {
+            println!("{} is game id, {} is message_id", game.id, reac.message_id);
             if game.id == reac.message_id {
                 if !game.players.contains(&reac.user_id.unwrap()) {
                     game.players.push(reac.user_id.unwrap());
                     save_games(&games).await;
+                    println!("games saved with your name");
                 }
                 break;
             }
@@ -217,6 +219,7 @@ async fn main() {
     let intents = GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::GUILD_MESSAGE_REACTIONS
         | GatewayIntents::MESSAGE_CONTENT;
 
     // Create a new instance of the Client, logging in as a bot.
