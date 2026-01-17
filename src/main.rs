@@ -1,6 +1,7 @@
 use std::env;
 use std::vec;
 mod commands;
+use serde::Deserialize;
 use serenity::all::Http;
 use serenity::all::MessageId;
 use serenity::all::Reaction;
@@ -19,7 +20,7 @@ use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
 use tokio::time::{Duration, sleep};
 struct Handler;
-
+use serde::Serialize;
 #[derive(Clone, Copy)]
 enum Suits {
     Hearts,
@@ -27,7 +28,7 @@ enum Suits {
     Spades,
     Clubs,
 }
-
+#[derive(Serialize, Deserialize)]
 struct Game {
     id: MessageId,
     players: Vec<UserId>,
@@ -88,13 +89,27 @@ async fn countdown(mut seconds: u64) {
     }
     println!("Done!");
 }
-async fn create_game(game: Game) {
-    let json = serde_json::to_string_pretty(game).unwrap();
+async fn append_game(game: Game) {
+    let mut games: Vec<Game> = load_games().await;
+
+    if !games.iter().any(|g| g.id == game.id) {
+        games.push(game);
+        save_games(&games).await;
+    }
+}
+async fn load_games() -> Vec<Game> {
+    let data = tokio::fs::read_to_string("games.json")
+        .await
+        .unwrap_or_else(|_| "[]".to_string());
+
+    serde_json::from_str(&data).unwrap_or_default()
+}
+
+async fn save_games(games: &[Game]) {
+    let json = serde_json::to_string_pretty(games).unwrap();
 
     tokio::fs::write("games.tmp", json).await.unwrap();
-    tokio::fs::rename("games.tmp", "servers.json")
-        .await
-        .unwrap();
+    tokio::fs::rename("games.tmp", "games.json").await.unwrap();
 }
 
 async fn blackjack(ctx: &Context, channel_id: ChannelId, n: i8) {
@@ -108,14 +123,24 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: i8) {
         id: msg_id.id,
         players: Vec::new(),
     };
-    create_game(current);
+    append_game(current).await;
     countdown(60).await;
 }
 #[async_trait]
 impl EventHandler for Handler {
-    async fn reaction_add(&self, ctx: Context, reac: Reaction) {
-        reac.message_id;
+    async fn reaction_add(&self, _: Context, reac: Reaction) {
+        let mut games = load_games().await;
+        for game in games.iter_mut() {
+            if game.id == reac.message_id {
+                if !game.players.contains(&reac.user_id.unwrap()) {
+                    game.players.push(reac.user_id.unwrap());
+                    save_games(&games).await;
+                }
+                break;
+            }
+        }
     }
+
     //add the player to the game
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
