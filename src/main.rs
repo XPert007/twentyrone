@@ -19,6 +19,7 @@ use serde::Serialize;
 use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 struct Handler;
 
@@ -36,7 +37,7 @@ struct Game {
 }
 struct GamesKey;
 impl TypeMapKey for GamesKey {
-    type Value = HashMap<MessageId, Game>;
+    type Value = Arc<Mutex<HashMap<MessageId, Game>>>;
 }
 struct Card {
     name: &'static str,
@@ -156,7 +157,13 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
 }
 #[async_trait]
 impl EventHandler for Handler {
-    async fn reaction_add(&self, _: Context, reac: Reaction) {
+    async fn reaction_add(&self, ctx: Context, reac: Reaction) {
+        let mut data = ctx.data.write().await;
+        let gamez = data.get_mut::<GamesKey>().unwrap();
+        let mut game = gamez.lock().await;
+        if let Some(x) = game.get_mut(&reac.message_id) {
+            x.add_player(reac.user_id.unwrap());
+        };
         let mut games = load_games().await;
         for game in games.iter_mut() {
             println!("{} is game id, {} is message_id", game.id, reac.message_id);
