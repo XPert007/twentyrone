@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 mod commands;
 use serde::Deserialize;
@@ -14,11 +15,13 @@ mod utils;
 use crate::utils::servers::Server;
 use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
+use serde::Serialize;
 use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
+use std::sync::Arc;
 use tokio::time::{Duration, sleep};
 struct Handler;
-use serde::Serialize;
+
 #[derive(Clone, Copy)]
 enum Suits {
     Hearts,
@@ -31,7 +34,10 @@ struct Game {
     id: MessageId,
     players: Vec<UserId>,
 }
-
+struct GamesKey;
+impl TypeMapKey for GamesKey {
+    type Value = HashMap<MessageId, Game>;
+}
 struct Card {
     name: &'static str,
     value: i8,
@@ -76,7 +82,6 @@ async fn send_and_react(ctx: &Context, channel_id: ChannelId, content: &str) -> 
         .say(&ctx.http, content)
         .await
         .expect("Failed to send message");
-
     msg.react(&ctx.http, ReactionType::Unicode("🃏".to_string()))
         .await
         .expect("Failed to react");
