@@ -37,7 +37,7 @@ struct Game {
 }
 struct GamesKey;
 impl TypeMapKey for GamesKey {
-    type Value = Arc<Mutex<HashMap<MessageId, Game>>>;
+    type Value = HashMap<MessageId, Game>;
 }
 struct Card {
     name: &'static str,
@@ -46,7 +46,11 @@ struct Card {
 }
 impl Game {
     fn add_player(&mut self, id: UserId) {
-        self.players.push(id);
+        if !self.players.contains(&id) {
+            self.players.push(id);
+        } else {
+            println!("you already exist");
+        }
     }
     fn len(&self) -> usize {
         self.players.len()
@@ -138,18 +142,15 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
         id: msg_id.id,
         players: Vec::new(),
     };
-    append_game(current.clone()).await;
     countdown(60).await;
-    let games = load_games().await;
+    let mut data = ctx.data.write().await;
+    let games = data.get_mut::<GamesKey>().unwrap();
+    let game = games.get(&current.id).unwrap();
     let mut sufficient_players = false;
-    for game in games {
-        if game.id == current.id {
-            if n == game.len() {
-                sufficient_players = true;
-                channel_id.say(&ctx, "Game started").await.unwrap();
-                remove_game(&current).await;
-            }
-        }
+    if game.len() == n {
+        sufficient_players = true;
+        channel_id.say(&ctx, "game started").await.unwrap();
+        //drop the game from games after starting it;
     }
     if !sufficient_players {
         channel_id.say(&ctx, "Not enough players").await.unwrap();
@@ -159,24 +160,13 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
 impl EventHandler for Handler {
     async fn reaction_add(&self, ctx: Context, reac: Reaction) {
         let mut data = ctx.data.write().await;
-        let gamez = data.get_mut::<GamesKey>().unwrap();
-        let mut game = gamez.lock().await;
-        if let Some(x) = game.get_mut(&reac.message_id) {
+        let games = data.get_mut::<GamesKey>().unwrap();
+
+        if let Some(x) = games.get_mut(&reac.message_id) {
             x.add_player(reac.user_id.unwrap());
         };
-        let mut games = load_games().await;
-        for game in games.iter_mut() {
-            println!("{} is game id, {} is message_id", game.id, reac.message_id);
-            if game.id == reac.message_id {
-                if !game.players.contains(&reac.user_id.unwrap()) {
-                    game.add_player(reac.user_id.unwrap());
-                    save_games(&games).await;
-                    println!("games saved with your name");
-                }
-                break;
-            }
-        }
     }
+    //adding functionality for reaction remove
 
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
