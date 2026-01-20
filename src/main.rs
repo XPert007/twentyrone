@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::env;
+use std::hash::Hash;
 mod commands;
 use serde::Deserialize;
 use serenity::all::MessageId;
@@ -23,31 +24,39 @@ use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 struct Handler;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Deserialize)]
 enum Suits {
     Hearts,
     Diamonds,
     Spades,
     Clubs,
 }
-#[derive(Serialize, Deserialize, Clone)]
+//id is now redundant so remove that later
+
+#[derive(Clone)]
 struct Game {
     id: MessageId,
     players: Vec<UserId>,
+    cards: HashMap<UserId, Vec<Card>>,
 }
-struct GamesKey;
-impl TypeMapKey for GamesKey {
-    type Value = HashMap<MessageId, Game>;
-}
+
+#[derive(Clone)]
 struct Card {
     name: &'static str,
     value: i8,
     suit: Suits,
 }
+
+struct GamesKey;
+impl TypeMapKey for GamesKey {
+    type Value = HashMap<MessageId, Game>;
+}
+
 impl Game {
     fn add_player(&mut self, id: UserId) {
         if !self.players.contains(&id) {
             self.players.push(id);
+            self.cards.insert(id, Vec::new());
         } else {
             println!("you already exist");
         }
@@ -100,36 +109,6 @@ async fn countdown(mut seconds: u64) {
     }
     println!("Done!");
 }
-async fn append_game(game: Game) {
-    let mut games: Vec<Game> = load_games().await;
-
-    if !games.iter().any(|g| g.id == game.id) {
-        games.push(game);
-        save_games(&games).await;
-    }
-}
-async fn load_games() -> Vec<Game> {
-    let data = tokio::fs::read_to_string("games.json")
-        .await
-        .unwrap_or_else(|_| "[]".to_string());
-
-    serde_json::from_str(&data).unwrap_or_default()
-}
-
-async fn remove_game(game: &Game) {
-    let mut games: Vec<Game> = load_games().await;
-
-    if let Some(pos) = games.iter().position(|x| x.id == game.id) {
-        games.remove(pos);
-    }
-    save_games(&games).await;
-}
-async fn save_games(games: &[Game]) {
-    let json = serde_json::to_string_pretty(games).unwrap();
-
-    tokio::fs::write("games.tmp", json).await.unwrap();
-    tokio::fs::rename("games.tmp", "games.json").await.unwrap();
-}
 
 async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     let msg_id = send_and_react(
@@ -141,6 +120,7 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     let current: Game = Game {
         id: msg_id.id,
         players: Vec::new(),
+        cards: HashMap::new(),
     };
     countdown(60).await;
     let mut data = ctx.data.write().await;
@@ -150,6 +130,7 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     if game.len() == n {
         sufficient_players = true;
         channel_id.say(&ctx, "game started").await.unwrap();
+
         //drop the game from games after starting it;
     }
     if !sufficient_players {
