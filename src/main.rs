@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::hash::Hash;
 mod commands;
+use rand::random;
 use serde::Deserialize;
 use serenity::all::MessageId;
 use serenity::all::Reaction;
@@ -16,6 +17,7 @@ mod utils;
 use crate::utils::servers::Server;
 use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
+use rand::prelude::*;
 use serde::Serialize;
 use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
@@ -164,6 +166,8 @@ async fn start_game(game: Game) {
     //remember to drop game from games not the clone
     let mut cards = gen_cards();
     let players_with_cards = game.cards;
+    let mut rng = rand::rng();
+    let n = rng.random_range(1..=10);
 }
 
 #[async_trait]
