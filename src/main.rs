@@ -72,6 +72,20 @@ fn value(n: &str) -> i8 {
         _ => 0,
     }
 }
+fn get_name(n: i8) -> &'static str {
+    match n {
+        2 => "Two",
+        3 => "Three",
+        4 => "Four",
+        5 => "Five",
+        6 => "Six",
+        7 => "Seven",
+        8 => "Eight",
+        9 => "Nine",
+        10 => "Ten",
+        _ => "This value shouldn't exist",
+    }
+}
 fn gen_cards() -> Vec<Card> {
     let names = ["King", "Queen", "Ace", "Jack"];
     let suits = [Suits::Hearts, Suits::Diamonds, Suits::Spades, Suits::Clubs];
@@ -87,7 +101,15 @@ fn gen_cards() -> Vec<Card> {
             });
         }
     }
-
+    for &suit in &suits {
+        for i in 2..10 {
+            cards.push(Card {
+                name: get_name(i),
+                value: i,
+                suit,
+            })
+        }
+    }
     cards
 }
 
@@ -130,13 +152,20 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     if game.len() == n {
         sufficient_players = true;
         channel_id.say(&ctx, "game started").await.unwrap();
-
+        start_game(game.clone()).await;
         //drop the game from games after starting it;
     }
     if !sufficient_players {
         channel_id.say(&ctx, "Not enough players").await.unwrap();
+        games.remove(&current.id);
     }
 }
+async fn start_game(game: Game) {
+    //remember to drop game from games not the clone
+    let mut cards = gen_cards();
+    let players_with_cards = game.cards;
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn reaction_add(&self, ctx: Context, reac: Reaction) {
