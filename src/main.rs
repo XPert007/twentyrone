@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::btree_map::Range;
 use std::env;
 use std::hash::Hash;
 mod commands;
@@ -42,7 +43,7 @@ struct Game {
     cards: HashMap<UserId, Vec<Card>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct Card {
     name: &'static str,
     value: i8,
@@ -65,6 +66,11 @@ impl Game {
     }
     fn len(&self) -> usize {
         self.players.len()
+    }
+    fn add_card(&mut self, id: UserId, card: Card) {
+        if self.players.contains(&id) {
+            self.cards.get_mut(&id).unwrap().push(card);
+        }
     }
 }
 fn value(n: &str) -> i8 {
@@ -146,9 +152,10 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
         players: Vec::new(),
         cards: HashMap::new(),
     };
-    countdown(60).await;
     let mut data = ctx.data.write().await;
     let games = data.get_mut::<GamesKey>().unwrap();
+    games.insert(msg_id.id, current.clone());
+    countdown(60).await;
     let game = games.get(&current.id).unwrap();
     let mut sufficient_players = false;
     if game.len() == n {
@@ -162,14 +169,19 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
         games.remove(&current.id);
     }
 }
-async fn start_game(game: Game) {
-    //remember to drop game from games not the clone
-    let mut cards = gen_cards();
-    let players_with_cards = game.cards;
+async fn start_game(mut game: Game) {
+    let cards = gen_cards();
     let mut rng = rand::rng();
-    let n = rng.random_range(1..=10);
-}
+    for &player in game.players.clone().iter() {
+        let one = cards[rng.random_range(0..cards.len())];
+        let two = cards[rng.random_range(0..cards.len())];
 
+        game.add_card(player, one);
+        game.add_card(player, two);
+    }
+}
+//since this is completely random we can ask players how many decks to shuffle for card counting
+//and stuff
 #[async_trait]
 impl EventHandler for Handler {
     async fn reaction_add(&self, ctx: Context, reac: Reaction) {
