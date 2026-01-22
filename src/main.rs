@@ -1,4 +1,5 @@
 use core::fmt;
+use serenity::builder::CreateMessage;
 use std::collections::HashMap;
 use std::collections::btree_map::Range;
 use std::env;
@@ -6,6 +7,7 @@ use std::hash::Hash;
 mod commands;
 use rand::random;
 use serde::Deserialize;
+use serenity::all::CreateButton;
 use serenity::all::MessageId;
 use serenity::all::Reaction;
 use serenity::all::ReactionType;
@@ -21,8 +23,10 @@ use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
 use rand::prelude::*;
 use serde::Serialize;
+use serenity::Result;
 use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
+use serenity::prelude::Context;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
@@ -234,7 +238,42 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, mut game: Game) {
     };
     system.push(one);
     channel_id
-        .say(&ctx, format!("System drew {} of {:?}", one.name, one.suit))
+        .say(
+            &ctx,
+            format!(
+                "System drew {} of {:?} and a face down card",
+                one.name, one.suit
+            ),
+        )
+        .await
+        .unwrap();
+    for &player in game.players.iter() {
+        if game
+            .cards
+            .get(&player)
+            .unwrap()
+            .iter()
+            .map(|card| card.value)
+            .sum::<i8>()
+            == 21 as i8
+        //exquisite line of code, am cool I know
+        {
+            channel_id
+                .say(&ctx.http, format!("<@{}> won", &player))
+                .await
+                .unwrap();
+        }
+    }
+}
+async fn button(ctx: &Context, channel_id: ChannelId) {
+    channel_id
+        .send_message(
+            &ctx.http,
+            CreateMessage::new().button(
+                CreateButton::new_link("https://youtube.com".to_string())
+                    .label("youtube".to_string()),
+            ),
+        )
         .await
         .unwrap();
 }
@@ -285,6 +324,9 @@ impl EventHandler for Handler {
                 }
                 "rns" => {
                     let _ = send_and_react(&ctx, msg.channel_id, "test").await;
+                }
+                "button" => {
+                    button(&ctx, msg.channel_id).await;
                 }
                 _ => (),
             }
