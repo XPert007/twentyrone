@@ -1,3 +1,4 @@
+use core::fmt;
 use std::collections::HashMap;
 use std::collections::btree_map::Range;
 use std::env;
@@ -49,7 +50,11 @@ struct Card {
     value: i8,
     suit: Suits,
 }
-
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
 struct GamesKey;
 impl TypeMapKey for GamesKey {
     type Value = HashMap<MessageId, Game>;
@@ -204,13 +209,34 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, mut game: Game) {
         game.add_card(player, one);
         game.add_card(player, two);
     }
-
+    //add a view card impl for game
     for &player in game.players.iter() {
         channel_id
-            .say(&ctx.http, format!("<@{}> is holding cards", player))
+            .say(
+                &ctx.http,
+                format!(
+                    "<@{}> is holding cards {} of {:?} and {} of {:?}",
+                    player,
+                    game.cards.get(&player).unwrap()[0].name,
+                    game.cards.get(&player).unwrap()[0].suit,
+                    game.cards.get(&player).unwrap()[1].name,
+                    game.cards.get(&player).unwrap()[1].suit,
+                ),
+            )
             .await
             .unwrap();
     }
+
+    let mut system: Vec<Card> = Vec::new();
+    let one = {
+        let mut rng = rand::rng();
+        cards[rng.random_range(0..cards.len())]
+    };
+    system.push(one);
+    channel_id
+        .say(&ctx, format!("System drew {} of {:?}", one.name, one.suit))
+        .await
+        .unwrap();
 }
 
 //since this is completely random we can ask players how many decks to shuffle for card counting
