@@ -161,25 +161,35 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     if game.len() == n {
         sufficient_players = true;
         channel_id.say(&ctx, "game started").await.unwrap();
-        start_game(game.clone()).await;
+        start_game(ctx, msg_id.channel_id, game.clone()).await;
         //drop the game from games after starting it;
     }
+
     if !sufficient_players {
         channel_id.say(&ctx, "Not enough players").await.unwrap();
         games.remove(&current.id);
     }
 }
-async fn start_game(mut game: Game) {
+async fn start_game(ctx: &Context, channel_id: ChannelId, mut game: Game) {
     let cards = gen_cards();
     let mut rng = rand::rng();
-    for &player in game.players.clone().iter() {
+
+    for player in game.players.clone() {
         let one = cards[rng.random_range(0..cards.len())];
         let two = cards[rng.random_range(0..cards.len())];
 
         game.add_card(player, one);
         game.add_card(player, two);
     }
+
+    for &player in game.players.iter() {
+        channel_id
+            .say(&ctx.http, format!("<@{}> is holding cards", player))
+            .await
+            .unwrap();
+    }
 }
+
 //since this is completely random we can ask players how many decks to shuffle for card counting
 //and stuff
 #[async_trait]
