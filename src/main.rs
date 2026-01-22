@@ -27,7 +27,7 @@ use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 struct Handler;
 
-#[derive(Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 enum Suits {
     Hearts,
     Diamonds,
@@ -36,14 +36,14 @@ enum Suits {
 }
 //id is now redundant so remove that later
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Game {
     id: MessageId,
     players: Vec<UserId>,
     cards: HashMap<UserId, Vec<Card>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct Card {
     name: &'static str,
     value: i8,
@@ -141,40 +141,63 @@ async fn countdown(mut seconds: u64) {
 }
 
 async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
-    let msg_id = send_and_react(
+    let msg = send_and_react(
         ctx,
         channel_id,
         "React to this message to register for the game, the game will start in 60 seconds",
     )
     .await;
-    let current: Game = Game {
-        id: msg_id.id,
+
+    let game = Game {
+        id: msg.id,
         players: Vec::new(),
         cards: HashMap::new(),
     };
-    let mut data = ctx.data.write().await;
-    let games = data.get_mut::<GamesKey>().unwrap();
-    games.insert(msg_id.id, current.clone());
-    countdown(60).await;
-    let game = games.get(&current.id).unwrap();
-    let mut sufficient_players = false;
-    if game.len() == n {
-        sufficient_players = true;
-        channel_id.say(&ctx, "game started").await.unwrap();
-        start_game(ctx, msg_id.channel_id, game.clone()).await;
-        //drop the game from games after starting it;
+
+    {
+        let mut data = ctx.data.write().await;
+        let games = data.get_mut::<GamesKey>().unwrap();
+        games.insert(msg.id, game);
     }
 
-    if !sufficient_players {
-        channel_id.say(&ctx, "Not enough players").await.unwrap();
-        games.remove(&current.id);
-    }
+    let ctx = ctx.clone();
+    let channel_id = msg.channel_id;
+    let msg_id = msg.id;
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        let game = {
+            let mut data = ctx.data.write().await;
+            let games = data.get_mut::<GamesKey>().unwrap();
+            games.remove(&msg_id)
+        };
+
+        match game {
+            Some(game) if game.len() == n => {
+                channel_id.say(&ctx.http, "Game started!").await.unwrap();
+
+                start_game(&ctx, channel_id, game).await;
+            }
+            Some(_) => {
+                println!("{:?}", game);
+                channel_id
+                    .say(&ctx.http, "Not enough players.")
+                    .await
+                    .unwrap();
+            }
+            None => {
+                todo!();
+            }
+        }
+    });
 }
+
 async fn start_game(ctx: &Context, channel_id: ChannelId, mut game: Game) {
     let cards = gen_cards();
-    let mut rng = rand::rng();
 
     for player in game.players.clone() {
+        let mut rng = rand::rng();
         let one = cards[rng.random_range(0..cards.len())];
         let two = cards[rng.random_range(0..cards.len())];
 
@@ -197,9 +220,10 @@ impl EventHandler for Handler {
     async fn reaction_add(&self, ctx: Context, reac: Reaction) {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
-
+        //ignore bot reaction do something
         if let Some(x) = games.get_mut(&reac.message_id) {
             x.add_player(reac.user_id.unwrap());
+            println!("Player added");
         };
     }
     //adding functionality for reaction remove
@@ -219,17 +243,11 @@ impl EventHandler for Handler {
                 "ping" => commands::ping::run(&ctx, &msg).await,
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
                 "blackjack" => {
-                    if let Some(c) = args.next().and_then(|w| w.chars().next()) {
-                        blackjack(&ctx, msg.channel_id, c as usize).await;
+                    if let Some(n) = args.next().and_then(|w| w.parse::<usize>().ok()) {
+                        blackjack(&ctx, msg.channel_id, n).await;
                     } else {
                         msg.channel_id
-                            .say(
-                                &ctx,
-                                format!(
-                                    "Please use the proper format example \"{}blackjack 5\"",
-                                    prefix
-                                ),
-                            )
+                            .say(&ctx.http, format!("Usage: {}blackjack <number>", prefix))
                             .await
                             .unwrap();
                     }
@@ -287,7 +305,10 @@ async fn main() {
         .event_handler(Handler)
         .await
         .expect("Err creating client");
-
+    {
+        let mut data = client.data.write().await;
+        data.insert::<GamesKey>(HashMap::new());
+    }
     // Start listening for events by starting a single shard
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
