@@ -57,6 +57,7 @@ struct Card {
     value: i8,
     suit: Suits,
 }
+
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
@@ -66,7 +67,6 @@ struct GamesKey;
 impl TypeMapKey for GamesKey {
     type Value = HashMap<MessageId, Game>;
 }
-
 impl Game {
     fn add_player(&mut self, id: UserId) {
         if !self.players.contains(&id) {
@@ -178,60 +178,59 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(10)).await;
-
-        let game = {
-            let mut data = ctx.data.write().await;
-            let games = data.get_mut::<GamesKey>().unwrap();
-            games.remove(&msg_id)
-        };
-
-        match game {
-            Some(game) if game.len() == n => {
-                channel_id.say(&ctx.http, "Game started!").await.unwrap();
-
-                start_game(&ctx, channel_id, game).await;
-            }
-            Some(_) => {
-                println!("{:?}", game);
-                channel_id
-                    .say(&ctx.http, "Not enough players.")
-                    .await
-                    .unwrap();
-            }
-            None => {
-                todo!();
-            }
-        }
+        start_game(&ctx, channel_id, msg_id).await;
     });
 }
 
-async fn start_game(ctx: &Context, channel_id: ChannelId, mut game: Game) {
+async fn button(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
+    channel_id
+        .send_message(
+            &ctx.http,
+            CreateMessage::new()
+                .content("Select what your move would be:")
+                .button(CreateButton::new(format!("hit:{}", msg_id)).label("Hit"))
+                .button(CreateButton::new(format!("stand:{}", msg_id)).label("Stand")),
+        )
+        .await
+        .unwrap();
+}
+
+async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
     let cards = gen_cards();
+    {
+        let mut data = ctx.data.write().await;
+        let games = data.get_mut::<GamesKey>().unwrap();
+        let game = games.get_mut(&msg_id).unwrap();
+        for player in game.players.clone() {
+            let mut rng = rand::rng();
+            let one = cards[rng.random_range(0..cards.len())];
+            let two = cards[rng.random_range(0..cards.len())];
 
-    for player in game.players.clone() {
-        let mut rng = rand::rng();
-        let one = cards[rng.random_range(0..cards.len())];
-        let two = cards[rng.random_range(0..cards.len())];
-
-        game.add_card(player, one);
-        game.add_card(player, two);
+            game.add_card(player, one);
+            game.add_card(player, two);
+        }
     }
     //add a view card impl for game
-    for &player in game.players.iter() {
-        channel_id
-            .say(
-                &ctx.http,
-                format!(
-                    "<@{}> is holding cards {} of {:?} and {} of {:?}",
-                    player,
-                    game.cards.get(&player).unwrap()[0].name,
-                    game.cards.get(&player).unwrap()[0].suit,
-                    game.cards.get(&player).unwrap()[1].name,
-                    game.cards.get(&player).unwrap()[1].suit,
-                ),
-            )
-            .await
-            .unwrap();
+    {
+        let mut data = ctx.data.write().await;
+        let games = data.get_mut::<GamesKey>().unwrap();
+        let game = games.get(&msg_id).unwrap();
+        for &player in game.players.iter() {
+            channel_id
+                .say(
+                    &ctx.http,
+                    format!(
+                        "<@{}> is holding cards {} of {:?} and {} of {:?}",
+                        player,
+                        game.cards.get(&player).unwrap()[0].name,
+                        game.cards.get(&player).unwrap()[0].suit,
+                        game.cards.get(&player).unwrap()[1].name,
+                        game.cards.get(&player).unwrap()[1].suit,
+                    ),
+                )
+                .await
+                .unwrap();
+        }
     }
 
     let mut system: Vec<Card> = Vec::new();
@@ -250,33 +249,29 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, mut game: Game) {
         )
         .await
         .unwrap();
-    for &player in game.players.iter() {
-        if game
-            .cards
-            .get(&player)
-            .unwrap()
-            .iter()
-            .map(|card| card.value)
-            .sum::<i8>()
-            == 21 as i8
-        //exquisite line of code, am cool I know
-        {
-            channel_id
-                .say(&ctx.http, format!("<@{}> won", &player))
-                .await
-                .unwrap();
+    {
+        let mut data = ctx.data.write().await;
+        let games = data.get_mut::<GamesKey>().unwrap();
+        let game = games.get(&msg_id).unwrap();
+        for &player in game.players.iter() {
+            if game
+                .cards
+                .get(&player)
+                .unwrap()
+                .iter()
+                .map(|card| card.value)
+                .sum::<i8>()
+                == 21 as i8
+            //exquisite line of code, am cool I know
+            {
+                channel_id
+                    .say(&ctx.http, format!("<@{}> won", &player))
+                    .await
+                    .unwrap();
+            }
         }
     }
-}
-async fn button(ctx: &Context, channel_id: ChannelId) {
-    channel_id
-        .send_message(
-            &ctx.http,
-            CreateMessage::new()
-                .button(CreateButton::new("hit".to_string()).label("Hit".to_string())),
-        )
-        .await
-        .unwrap();
+    button(ctx, channel_id, msg_id).await;
 }
 
 //since this is completely random we can ask players how many decks to shuffle for card counting
@@ -294,8 +289,12 @@ impl EventHandler for Handler {
     }
     //adding functionality for reaction remove
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        let id = interaction.message_component().unwrap().data.custom_id;
-        println!("{}", id);
+        let interaction2 = interaction.clone();
+        let custom_id = interaction2.message_component().unwrap().data.custom_id;
+        let user = interaction.message_component().unwrap().user.id.clone();
+        let mut parts = custom_id.split(':');
+        let action = parts.next().unwrap();
+        let msg_id: MessageId = parts.next().unwrap().parse().unwrap();
     }
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
