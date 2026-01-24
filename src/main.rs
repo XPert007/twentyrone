@@ -1,6 +1,8 @@
 use core::fmt;
 use serenity::all::ComponentInteraction;
 use serenity::all::ComponentInteractionData;
+use serenity::all::CreateInteractionResponse;
+use serenity::all::CreateInteractionResponseMessage;
 use serenity::all::Interaction;
 use serenity::all::User;
 use serenity::builder::CreateMessage;
@@ -472,6 +474,7 @@ impl EventHandler for Handler {
                 let mut data = ctx.data.write().await;
                 let games = data.get_mut::<GamesKey>().unwrap();
                 let game = games.get_mut(&msg_id).unwrap();
+
                 channel_id
                     .say(ctx.http, format!("<@{}> drew {}", user, game.hit(user)))
                     .await
