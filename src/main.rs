@@ -1,4 +1,7 @@
 use core::fmt;
+use serenity::all::ComponentInteraction;
+use serenity::all::ComponentInteractionData;
+use serenity::all::Interaction;
 use serenity::builder::CreateMessage;
 use std::collections::HashMap;
 use std::collections::btree_map::Range;
@@ -269,10 +272,8 @@ async fn button(ctx: &Context, channel_id: ChannelId) {
     channel_id
         .send_message(
             &ctx.http,
-            CreateMessage::new().button(
-                CreateButton::new_link("https://youtube.com".to_string())
-                    .label("youtube".to_string()),
-            ),
+            CreateMessage::new()
+                .button(CreateButton::new("hit".to_string()).label("Hit".to_string())),
         )
         .await
         .unwrap();
@@ -292,7 +293,10 @@ impl EventHandler for Handler {
         };
     }
     //adding functionality for reaction remove
-
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        let id = interaction.message_component().unwrap().data.custom_id;
+        println!("{}", id);
+    }
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
         let prefix = msg
