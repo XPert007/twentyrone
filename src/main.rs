@@ -2,6 +2,7 @@ use core::fmt;
 use serenity::all::ComponentInteraction;
 use serenity::all::ComponentInteractionData;
 use serenity::all::Interaction;
+use serenity::all::User;
 use serenity::builder::CreateMessage;
 use std::collections::HashMap;
 use std::collections::btree_map::Range;
@@ -44,11 +45,19 @@ enum Suits {
 }
 //id is now redundant so remove that later
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+enum Status {
+    Hit,
+    Stand,
+    None,
+}
 #[derive(Debug, Clone)]
 struct Game {
     id: MessageId,
     players: Vec<UserId>,
     cards: HashMap<UserId, Vec<Card>>,
+    has_clicked: HashMap<UserId, bool>,
+    status: HashMap<UserId, Status>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -72,6 +81,8 @@ impl Game {
         if !self.players.contains(&id) {
             self.players.push(id);
             self.cards.insert(id, Vec::new());
+            self.has_clicked.insert(id, false);
+            self.status.insert(id, Status::None);
         } else {
             println!("you already exist");
         }
@@ -79,9 +90,44 @@ impl Game {
     fn len(&self) -> usize {
         self.players.len()
     }
-    fn add_card(&mut self, id: UserId, card: Card) {
+    fn add_card(&mut self, id: UserId) {
         if self.players.contains(&id) {
-            self.cards.get_mut(&id).unwrap().push(card);
+            let cards = gen_cards();
+            let mut rng = rand::rng();
+            let one = cards[rng.random_range(0..cards.len())];
+            self.cards.get_mut(&id).unwrap().push(one);
+        }
+    }
+
+    fn hit(&mut self, id: UserId) {
+        if self.players.contains(&id) {
+            let cards = gen_cards();
+            let mut rng = rand::rng();
+            let one = cards[rng.random_range(0..cards.len())];
+
+            if let Some(hand) = self.cards.get_mut(&id) {
+                hand.push(one);
+            }
+
+            if let Some(clicked) = self.has_clicked.get_mut(&id) {
+                *clicked = true;
+            }
+
+            if let Some(status) = self.status.get_mut(&id) {
+                *status = Status::Hit;
+            }
+        }
+    }
+
+    fn stand(&mut self, id: UserId) {
+        if self.players.contains(&id) {
+            if let Some(clicked) = self.has_clicked.get_mut(&id) {
+                *clicked = true;
+            }
+
+            if let Some(status) = self.status.get_mut(&id) {
+                *status = Status::Stand;
+            }
         }
     }
 }
@@ -164,6 +210,9 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
         id: msg.id,
         players: Vec::new(),
         cards: HashMap::new(),
+        has_clicked: HashMap::new(),
+        status: HashMap::new(),
+        //is playing status
     };
 
     {
@@ -197,24 +246,24 @@ async fn button(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
 
 async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
     let cards = gen_cards();
+
     {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
         let game = games.get_mut(&msg_id).unwrap();
-        for player in game.players.clone() {
-            let mut rng = rand::rng();
-            let one = cards[rng.random_range(0..cards.len())];
-            let two = cards[rng.random_range(0..cards.len())];
 
-            game.add_card(player, one);
-            game.add_card(player, two);
+        for player in game.players.clone() {
+            game.add_card(player);
+            game.add_card(player);
         }
     }
-    //add a view card impl for game
+
+    // add a view card impl for game
     {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
         let game = games.get(&msg_id).unwrap();
+
         for &player in game.players.iter() {
             channel_id
                 .say(
@@ -234,11 +283,14 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
     }
 
     let mut system: Vec<Card> = Vec::new();
+
     let one = {
         let mut rng = rand::rng();
         cards[rng.random_range(0..cards.len())]
     };
+
     system.push(one);
+
     channel_id
         .say(
             &ctx,
@@ -249,10 +301,12 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
         )
         .await
         .unwrap();
+
     {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
         let game = games.get(&msg_id).unwrap();
+
         for &player in game.players.iter() {
             if game
                 .cards
@@ -262,7 +316,6 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
                 .map(|card| card.value)
                 .sum::<i8>()
                 == 21 as i8
-            //exquisite line of code, am cool I know
             {
                 channel_id
                     .say(&ctx.http, format!("<@{}> won", &player))
@@ -271,7 +324,103 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
             }
         }
     }
-    button(ctx, channel_id, msg_id).await;
+
+    let mut finished = false;
+
+    while !finished {
+        button(ctx, channel_id, msg_id).await;
+
+        let mut contains_false = true;
+
+        while contains_false {
+            let data = ctx.data.read().await;
+            let games = data.get::<GamesKey>().unwrap();
+            let game = games.get(&msg_id).unwrap();
+
+            if game.has_clicked.values().any(|x| !x) {
+                continue;
+            } else {
+                contains_false = false;
+            }
+        }
+
+        {
+            let mut data = ctx.data.write().await;
+            let games = data.get_mut::<GamesKey>().unwrap();
+            let game = games.get_mut(&msg_id).unwrap();
+
+            for v in game.has_clicked.values_mut() {
+                *v = false;
+            }
+        }
+
+        {
+            let data = ctx.data.write().await;
+            let games = data.get::<GamesKey>().unwrap();
+            let game = games.get(&msg_id).unwrap();
+
+            let winner = game
+                .cards
+                .iter()
+                .find(|(_, hand)| hand.iter().map(|c| c.value).sum::<i8>() == 21)
+                .map(|(player, _)| *player);
+
+            if let Some(winner) = winner {
+                channel_id
+                    .say(&ctx.http, format!("The winner is <@{}>", winner))
+                    .await
+                    .unwrap();
+                finished = true;
+                continue;
+            }
+        }
+
+        {
+            let data = ctx.data.write().await;
+            let games = data.get::<GamesKey>().unwrap();
+            let game = games.get(&msg_id).unwrap();
+
+            if game.status.values().any(|s| *s == Status::Hit) {
+                continue;
+            } else {
+                while system.iter().map(|c| c.value).sum::<i8>() < 17 {
+                    let two = {
+                        let mut rng = rand::rng();
+                        cards[rng.random_range(0..cards.len())]
+                    };
+                    system.push(two);
+                    channel_id
+                        .say(&ctx.http, format!("System drew {}", two))
+                        .await
+                        .unwrap();
+                }
+
+                let system_sum: i8 = system.iter().map(|c| c.value).sum();
+
+                let winner = game
+                    .cards
+                    .iter()
+                    .find(|(_, hand)| hand.iter().map(|c| c.value).sum::<i8>() > system_sum)
+                    .map(|(player, _)| *player);
+                if let Some(winner) = winner {
+                    channel_id
+                        .say(&ctx.http, format!("<@!{:?} won>", winner))
+                        .await
+                        .unwrap();
+                    finished = true;
+                    continue;
+                }
+            }
+        }
+        {
+            let mut data = ctx.data.write().await;
+            let games = data.get_mut::<GamesKey>().unwrap();
+            let game = games.get_mut(&msg_id).unwrap();
+            for player in game.status.values_mut() {
+                *player = Status::None;
+            }
+        }
+    }
 }
 
 //since this is completely random we can ask players how many decks to shuffle for card counting
@@ -282,6 +431,9 @@ impl EventHandler for Handler {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
         //ignore bot reaction do something
+        if reac.user_id.unwrap() == 888501593266348032 {
+            return;
+        }
         if let Some(x) = games.get_mut(&reac.message_id) {
             x.add_player(reac.user_id.unwrap());
             println!("Player added");
@@ -289,12 +441,32 @@ impl EventHandler for Handler {
     }
     //adding functionality for reaction remove
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        let interaction2 = interaction.clone();
-        let custom_id = interaction2.message_component().unwrap().data.custom_id;
+        let custom_id = interaction
+            .clone()
+            .message_component()
+            .unwrap()
+            .data
+            .custom_id;
         let user = interaction.message_component().unwrap().user.id.clone();
         let mut parts = custom_id.split(':');
         let action = parts.next().unwrap();
         let msg_id: MessageId = parts.next().unwrap().parse().unwrap();
+
+        match action {
+            "Hit" => {
+                let mut data = ctx.data.write().await;
+                let games = data.get_mut::<GamesKey>().unwrap();
+                let game = games.get_mut(&msg_id).unwrap();
+                game.hit(user);
+            }
+            "Stand" => {
+                let mut data = ctx.data.write().await;
+                let games = data.get_mut::<GamesKey>().unwrap();
+                let game = games.get_mut(&msg_id).unwrap();
+                game.stand(user);
+            }
+            _ => {}
+        }
     }
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
@@ -327,9 +499,6 @@ impl EventHandler for Handler {
                 }
                 "rns" => {
                     let _ = send_and_react(&ctx, msg.channel_id, "test").await;
-                }
-                "button" => {
-                    button(&ctx, msg.channel_id).await;
                 }
                 _ => (),
             }
