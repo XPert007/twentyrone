@@ -1,4 +1,3 @@
-use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 pub async fn run(ctx: &Context, msg: &Message) {
