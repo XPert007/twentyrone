@@ -45,6 +45,7 @@ struct Game {
     cards: HashMap<UserId, Vec<Card>>,
     has_clicked: HashMap<UserId, bool>,
     status: HashMap<UserId, Status>,
+    is_playing: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -186,6 +187,7 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId) {
         cards: HashMap::new(),
         has_clicked: HashMap::new(),
         status: HashMap::new(),
+        is_playing: false,
         //is playing status
     };
 
@@ -201,6 +203,7 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId) {
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(10)).await;
+
         start_game(&ctx, channel_id, msg_id).await;
     });
 }
@@ -225,7 +228,7 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
         let game = games.get_mut(&msg_id).unwrap();
-
+        game.is_playing = true;
         for player in game.players.clone() {
             game.add_card(player);
             game.add_card(player);
@@ -266,13 +269,7 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
     system.push(one);
 
     channel_id
-        .say(
-            &ctx,
-            format!(
-                "System drew {} of {:?} and a face down card",
-                one.name, one.suit
-            ),
-        )
+        .say(&ctx, format!("System drew {} of {:?}", one.name, one.suit))
         .await
         .unwrap();
 
@@ -295,6 +292,7 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
                     .say(&ctx.http, format!("<@{}> won", &player))
                     .await
                     .unwrap();
+                return;
             }
         }
     }
@@ -333,19 +331,29 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
             let games = data.get::<GamesKey>().unwrap();
             let game = games.get(&msg_id).unwrap();
 
-            let winner = game
+            let winners: Vec<UserId> = game
                 .cards
                 .iter()
-                .find(|(_, hand)| hand.iter().map(|c| c.value).sum::<i8>() == 21)
-                .map(|(player, _)| *player);
+                .filter(|(_, hand)| hand.iter().map(|c| c.value).sum::<i8>() == 21)
+                .map(|(player, _)| *player)
+                .collect();
 
-            if let Some(winner) = winner {
+            if winners.len() == 1 {
                 channel_id
-                    .say(&ctx.http, format!("The winner is <@{}>", winner))
+                    .say(&ctx.http, format!("<@{}> has won", winners[0]))
                     .await
                     .unwrap();
-                finished = true;
-                continue;
+            } else if !winners.is_empty() {
+                let mentions = winners
+                    .iter()
+                    .map(|id| format!("<@{}>", id))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                channel_id
+                    .say(&ctx.http, format!("The winners are: {}", mentions))
+                    .await
+                    .unwrap();
             }
         }
 
@@ -355,7 +363,6 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
             let game = games.get(&msg_id).unwrap();
 
             if game.status.values().any(|s| *s == Status::Hit) {
-                continue;
             } else {
                 while system.iter().map(|c| c.value).sum::<i8>() < 17 {
                     let two = {
@@ -375,24 +382,46 @@ async fn start_game(ctx: &Context, channel_id: ChannelId, msg_id: MessageId) {
                         .say(&ctx.http, "system busted, everyone won")
                         .await
                         .unwrap();
+                    finished = true;
+                    continue;
                 } else {
-                    let winner = game
+                    let winners: Vec<UserId> = game
                         .cards
                         .iter()
-                        .find(|(_, hand)| hand.iter().map(|c| c.value).sum::<i8>() > system_sum)
-                        .map(|(player, _)| *player);
-                    if let Some(winner) = winner {
+                        .filter(|(_, hand)| {
+                            let sum = hand.iter().map(|c| c.value).sum::<i8>();
+                            sum < 21 && sum > system_sum
+                        })
+                        .map(|(player, _)| *player)
+                        .collect();
+
+                    if winners.len() == 1 {
                         channel_id
-                            .say(&ctx.http, format!("<@!{:?} won>", winner))
+                            .say(&ctx.http, format!("<@{}> won", winners[0]))
+                            .await
+                            .unwrap();
+                        finished = true;
+                        continue;
+                    } else if !winners.is_empty() {
+                        let mentions = winners
+                            .iter()
+                            .map(|id| format!("<@{}>", id))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+
+                        channel_id
+                            .say(&ctx.http, format!("The winners are: {}", mentions))
                             .await
                             .unwrap();
                         finished = true;
                         continue;
                     } else {
                         channel_id
-                            .say(&ctx.http, "No one won lmao losers")
+                            .say(&ctx.http, " none of you won, lmao losers")
                             .await
                             .unwrap();
+                        finished = true;
+                        continue;
                     }
                 }
             }
@@ -416,13 +445,16 @@ impl EventHandler for Handler {
         let mut data = ctx.data.write().await;
         let games = data.get_mut::<GamesKey>().unwrap();
         //ignore bot reaction do something
+
         if reac.user_id.unwrap() == 888501593266348032 {
             return;
         }
         if let Some(x) = games.get_mut(&reac.message_id) {
-            x.add_player(reac.user_id.unwrap());
-            println!("Player added");
-        };
+            if x.is_playing == false {
+                x.add_player(reac.user_id.unwrap());
+                println!("Player added");
+            };
+        }
     }
     //adding functionality for reaction remove
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
@@ -445,9 +477,12 @@ impl EventHandler for Handler {
                 let mut data = ctx.data.write().await;
                 let games = data.get_mut::<GamesKey>().unwrap();
                 let game = games.get_mut(&msg_id).unwrap();
-
+                let card = game.hit(user);
                 channel_id
-                    .say(ctx.http, format!("<@{}> drew {}", user, game.hit(user)))
+                    .say(
+                        ctx.http,
+                        format!("<@{}> drew {} of {:?}", user, card.name, card.suit),
+                    )
                     .await
                     .unwrap();
             }
