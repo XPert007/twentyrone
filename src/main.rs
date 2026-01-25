@@ -1,18 +1,9 @@
 use core::fmt;
-use serenity::all::ComponentInteraction;
-use serenity::all::ComponentInteractionData;
-use serenity::all::CreateInteractionResponse;
-use serenity::all::CreateInteractionResponseMessage;
 use serenity::all::Interaction;
-use serenity::all::User;
 use serenity::builder::CreateMessage;
 use std::collections::HashMap;
-use std::collections::btree_map::Range;
 use std::env;
-use std::hash::Hash;
 mod commands;
-use rand::random;
-use serde::Deserialize;
 use serenity::all::CreateButton;
 use serenity::all::MessageId;
 use serenity::all::Reaction;
@@ -28,14 +19,10 @@ use crate::utils::servers::Server;
 use crate::utils::servers::append_server;
 use crate::utils::servers::load_servers;
 use rand::prelude::*;
-use serde::Serialize;
-use serenity::Result;
 use serenity::model::guild::Guild;
 use serenity::model::id::ChannelId;
 use serenity::prelude::Context;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::time::{Duration, sleep};
+use tokio::time::Duration;
 struct Handler;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
@@ -45,7 +32,6 @@ enum Suits {
     Spades,
     Clubs,
 }
-//id is now redundant so remove that later
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 enum Status {
@@ -55,7 +41,6 @@ enum Status {
 }
 #[derive(Debug, Clone)]
 struct Game {
-    id: MessageId,
     players: Vec<UserId>,
     cards: HashMap<UserId, Vec<Card>>,
     has_clicked: HashMap<UserId, bool>,
@@ -88,9 +73,6 @@ impl Game {
         } else {
             println!("you already exist");
         }
-    }
-    fn len(&self) -> usize {
-        self.players.len()
     }
     fn add_card(&mut self, id: UserId) {
         if self.players.contains(&id) {
@@ -191,16 +173,7 @@ async fn send_and_react(ctx: &Context, channel_id: ChannelId, content: &str) -> 
         .expect("Failed to react");
     return msg;
 }
-async fn countdown(mut seconds: u64) {
-    while seconds > 0 {
-        println!("{}", seconds);
-        sleep(Duration::from_secs(1)).await;
-        seconds -= 1;
-    }
-    println!("Done!");
-}
-
-async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
+async fn blackjack(ctx: &Context, channel_id: ChannelId) {
     let msg = send_and_react(
         ctx,
         channel_id,
@@ -209,7 +182,6 @@ async fn blackjack(ctx: &Context, channel_id: ChannelId, n: usize) {
     .await;
 
     let game = Game {
-        id: msg.id,
         players: Vec::new(),
         cards: HashMap::new(),
         has_clicked: HashMap::new(),
@@ -454,7 +426,6 @@ impl EventHandler for Handler {
     }
     //adding functionality for reaction remove
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        dbg!();
         let interaction2 = interaction.clone();
         let custom_id = interaction
             .clone()
@@ -479,7 +450,6 @@ impl EventHandler for Handler {
                     .say(ctx.http, format!("<@{}> drew {}", user, game.hit(user)))
                     .await
                     .unwrap();
-                dbg!();
             }
             "stand" => {
                 let mut data = ctx.data.write().await;
@@ -489,7 +459,6 @@ impl EventHandler for Handler {
             }
             _ => {}
         }
-        dbg!();
     }
     async fn message(&self, ctx: Context, msg: Message) {
         let servers = load_servers().await;
@@ -506,14 +475,7 @@ impl EventHandler for Handler {
                 "ping" => commands::ping::run(&ctx, &msg).await,
                 "setprefix" => commands::setprefix::run(args, msg.clone()).await,
                 "blackjack" => {
-                    if let Some(n) = args.next().and_then(|w| w.parse::<usize>().ok()) {
-                        blackjack(&ctx, msg.channel_id, n).await;
-                    } else {
-                        msg.channel_id
-                            .say(&ctx.http, format!("Usage: {}blackjack <number>", prefix))
-                            .await
-                            .unwrap();
-                    }
+                    blackjack(&ctx, msg.channel_id).await;
                 }
                 "react" => {
                     msg.react(ctx.http, ReactionType::Unicode("🔥".to_string()))
