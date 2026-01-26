@@ -1,5 +1,5 @@
 
-# ♠️ Rust Blackjack Discord Bot
+#  Rust Blackjack Discord Bot
 
 A Discord bot written in **Rust** that allows users to play **Blackjack** directly inside a Discord channel.
 
@@ -80,7 +80,14 @@ This is **not** a production-grade casino bot — it’s a functional, learning-
 - **Rand** (random card generation)
 
 ---
-
+## Usage guide
+the default prefix is "!", which changeable through
+``!setprefix {new_prefix}``
+to play blackjack, just use
+``{prefix} blackjack``
+for example 
+``!blackjack``
+---
 ## 🚀 Running the Bot
 
 1. Set your Discord bot token:
