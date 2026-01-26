@@ -81,7 +81,7 @@ This is **not** a production-grade casino bot — it’s a functional, learning-
 
 ---
 ## Usage guide
-the default prefix is "!", which changeable through
+the default prefix is "!", which is changeable through
 ``!setprefix {new_prefix}``
 to play blackjack, just use
 ``{prefix} blackjack``
